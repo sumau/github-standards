@@ -169,6 +169,31 @@ There is a `bandit-version` `env` variable in this job, that is used to install 
 
 This repository contains GitHub actions that are triggered by a set of GitHub Rulesets defined at the organisation level. Any repository in the uktrade organisation can opt in to using these GitHub actions by adding GitHub Custom properties to the repository.
 
+
+## Signed-off-by trailer check
+
+The `pre-commit-check` job in the Common CI workflow checks that the latest commit on a PR branch has the `Signed-off-by: DBT pre-commit check` trailer, which is added by the commit-msg hook when you commit locally.
+
+Commits made in the GitHub web UI cannot run the hook, so they never have the trailer. To stop these failing the job, commits committed by GitHub whose message starts with one of the allowed messages are skipped, and the job checks the latest commit below them instead. These are set in the `WEB_UI_COMMITTER_EMAIL` and `WEB_UI_COMMIT_MESSAGES` `env` variables of the job, and cover applying suggested changes and updating the branch from its target branch. Any other commit made in the web UI, such as editing a file in the browser, fails the check, as it cannot have the trailer.
+
+Failing those commits is deliberate. Changes made in the browser never go through the secret and personal data scans, so they are more likely to commit secrets or sensitive data. Applying a suggestion skips the scans in the same way, but the change is small, written by a reviewer and visible in the PR, so the risk is much lower. Make any larger change locally instead.
+
+Only this one commit is checked, so earlier commits on the branch are not looked at.
+
+The table below shows how the job behaves for some example PR branches, working back from the newest commit:
+
+| Last commit on the branch | Next commit checked | Expected outcome |
+| --- | --- | --- |
+| A local commit with the trailer | skip | Passes |
+| A local commit without the trailer | skip | Fails |
+| A web UI suggestion commit | A local commit with the trailer | Passes, the web UI commit is skipped |
+| A web UI suggestion commit | A local commit without the trailer | Fails, the local commit is still checked |
+| A web UI update branch commit | A web UI suggestion commit, then a local commit with the trailer | Passes, both web UI commits are skipped |
+| A file edited in the GitHub web UI | skip | Fails, editing a file in the browser is not skipped |
+| A web UI merge of a branch other than the PR's target branch | skip | Fails, only merges from the target branch are skipped |
+| A local commit without the trailer that came from a merged PR | skip | Passes, commits from merged PRs never have the trailer |
+| A web UI suggestion or update branch commit, with nothing below it | No commits left in the PR | Passes, there is no commit to check |
+
 ## Terraform Workflow
 
 The reusable Terraform workflow defined in this repository checks Terraform code in your repository against a number of standard tools: `terraform fmt`, `terraform validate` and `tflint`. If any of these checks do not exit successfully, the job will fail and you will need to make changes to your code to get it through the CI checks. Because a lot of the Terraform modules we use in our code are hosted in private GitHub repositories, we have had to create a GitHub App to allow them to be pulled into the GitHub Action at runtime. Therefore, there are some pre-requisites you must satisfy before this reusable workflow will work on your repository:
